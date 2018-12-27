@@ -1,0 +1,3 @@
+- git:
+    local-name: robot-programming
+    uri: https://github.com/jsk-enshu/robot-programming

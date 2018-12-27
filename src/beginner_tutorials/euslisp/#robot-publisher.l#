@@ -1,0 +1,77 @@
+#! /usr/bin/env roseus
+
+(if (and (fboundp 'jsk) (fboundp 'rbrain)) ;;'jskと'rbrainが両方とも関数として定義されてたらどちらも評価する
+    (progn (jsk) (rbrain))
+    (load "models/irt-all-robots.l"));; loadする
+
+(setq *robot-forms*　;; *robot-forms*にロボットの名前を格納
+      '((ape) (ape3)
+	(hanzou)
+	(miharu) (saizo)
+	(hanzous)
+	(bishamon)
+	(igoid) (igoid2) (igoid3)
+	(kuma)
+	(taro) (millennium) (akira) (akira2) (akira3) (zero)
+	(kaz) (kaz2) (kaz3) (tot)
+	(chibikaz)
+	(tama) (tamaii)
+	(penguin)
+	(h7)(h6)
+	))
+#+:rbrain-basic ;; 処理系?がrbrain-basicなら*robot-forms*にさらに追加する
+(setq *robot-forms* (append  *robot-forms* '( (sasuke) (komokuten) (tamonten) (jikokuten) (Alviss) (kamakiri) (hoap) (hoap2) (h5))))
+
+(ros::roseus "robot_publisher") ;; robot_publisherというノード名にする
+
+(setq *tfb* (instance ros::transform-broadcaster :init)) ;;tf関係のインスタンスをつくる
+(setq *tfl* (instance ros::transform-listener :init))
+(setq *robot-msgs* nil)
+
+(if (ros::has-param "~robot") ;; robot型のパラメータがあったら*robot-forms*にそれを代入
+    (setq *robot-forms* (read-from-string (ros::get-param "~robot"))))
+
+(let ((x (ros::get-param "~x" 0)) (y (ros::get-param "~y" 0))) ;;x, y定義、初期化
+  (dolist (robot-form *robot-forms*) ;;*robot-forms*の要素を一つずつ取り出して処理
+    (ros::ros-info ">> ~A~%" robot-form)
+    (let* ((robot (eval robot-form)) ;; let*とすると順番に一つずつ初期化して定義する
+	   (robot-name (send robot :name)) ;; letだとここの(send robot :name)で失敗する
+	   (robot-frame-id (format nil "/~A" (string-downcase robot-name))) ;; format nilで端末への出力をしない(代入のみ）
+	   msg)
+      (ros::advertise robot-frame-id visualization_msgs::Marker 5) ;; トピック、メッセージの型、バッファリング量の指定
+      (ros::ROS-INFO "loading and advertise ~a" robot-name) ;; robot-nameを端末上で表示
+      (setq tm (instance mtimer :init)) ;; euslispでタイマーとして使える関数
+      (send tm :start)
+      (setq msg (object->marker-msg robot ;; msgsにobjectの座標を格納
+				    (instance std_msgs::header
+					      :init :stamp (ros::time-now)
+					      :frame_id robot-frame-id)))
+      (push msg *robot-msgs*) ;;msgを*robot-msgs*に格納
+      (ros::ROS-INFO "~a ~a ~a" robot-name (send robot :worldpos) ;; robotの名前と位置とobjectの位置を表示 
+		     (ros::tf-point->pos (send msg :pose :position)))
+      (ros::ROS-INFO "object->marker convert time ~a[ms]"
+		     (* 1000 (send tm :stop))) ;;(send tm :start)からの経過時間を[ms]単位で表示
+
+      (send robot :locate (float-vector x y 0) :world) ;; robotを(x y 0)だけ移動
+      (if (> (incf y 800) 4000) (setq x (- x 1000) y 0))　;; yが一定値超えたらxを1000減らしてyを0にする
+      (send *tfb* :send-transform robot "/tmp" robot-frame-id) ;;robotをブロードキャストする(親リンクは"/tmp")
+      )))
+
+(ros::rate 5) ;;5hz
+(do-until-key
+    (dolist (msg *robot-msgs*) ;;*robot-msgs*からひとつずつ取り出す
+      (let (frame-id)
+	(setq frame-id (send msg :header :frame_id))
+	(print (list msg frame-id (get msg :published) (ros::get-num-subscribers frame-id)))
+	(when (and (null (get msg :published)) ;;publishされたmsgが無いかつsubscriberがいるなら
+		   (> (ros::get-num-subscribers frame-id) 0))
+	  (send msg :header :stamp (ros::time-now)) ;;タイムスタンプ
+	  (ros::ROS-INFO "publish marker ~A" frame-id) 
+	  (ros::publish frame-id msg) ;; frame-idとmsgをpublish
+	  (setf (get msg :published) t))
+	(ros::ROS-INFO "publish coords ~A" frame-id)
+	(setq coords (send *tfl* :lookup-transform "/tmp" frame-id (ros::time 0))) ;; "/tmp"からframe-idへの座標変換取得
+	(send coords :rotate 0.1 :z);; z軸周りに回転
+	(send *tfb* :send-transform coords "/tmp" frame-id))) ;;coordsを送信
+  (ros::spin-once) ;;spinと違ってループしない(do-until-keyがループの役割する)
+  (ros::sleep))

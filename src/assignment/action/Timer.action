@@ -1,0 +1,10 @@
+# Goal
+duration time_to_wait__goal
+---
+# Result
+duration time_elapsed__result
+uint32 updates_sent__result
+---
+#Feedback
+duration time_elapsed__feedback
+duration time_remaining__feedback
