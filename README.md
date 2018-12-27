@@ -1,1 +1,1 @@
-catkin_ws
+稲葉ゼミで用いたプログラムはsrc/assignment以下にあります
