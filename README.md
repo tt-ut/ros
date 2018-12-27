@@ -1,1 +1,3 @@
-稲葉ゼミで用いたプログラムはsrc/assignment以下にあります
+稲葉ゼミで用いたプログラムはsrc/assignment/scripts以下にあるskeleton2av.pyです.
+
+
